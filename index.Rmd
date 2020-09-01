@@ -1,0 +1,102 @@
+---
+title: "Practical Machine Learning Project"
+author: "KF"
+date: "8/27/2020"
+output: html_document
+---
+
+## Executive Summary
+This assignment is designed to predict the quality of barbell reps using data from accelerometers on the belt, forearm, arm, and dumbbell. The first part of this research is to explore the data and find data points that may be good predictors of exercise quality. After doing that, I will use the useful variables and fit multiple models to see which would best predict the results of an unknown "test" data set.
+
+
+## Exploratory Analysis
+After downloading the training data set, I reviewed the available variables so I could remove the ones that would not help predict the outcome. There were 108 out of the original 160 variables that were only descriptive but not helpful in predicting the outcome (time stamps, user names, metadata, etc.). The remaining 52 variables will be used in the models to see what is helpful in predicting Classe (outcome).
+```{r loadingData, echo=FALSE, error = FALSE, warning = FALSE, message=FALSE}
+#Load and prepare the data
+library(ggplot2)
+library(caret)
+library(Hmisc)
+library(dplyr)
+library(corrplot)
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "testing.csv")
+original_training <- read.csv("training.csv")
+original_testing <- read.csv("testing.csv")
+
+#Exploring the data. Noticed that there are many NA's and a bunch of quant variables as Character. After converting the quant-CHR variables to numeric, there are a lot that still don't have much data. This is due to the metadata captured by the "New Window" column. I will keep those rows but remove the metadata columns.
+
+#Result is that 52 of the columns (+Classe) have useful data on all observations.
+training_data <- original_training[,-c(1:7)]
+training_data$classe <- as.factor(training_data$classe)
+training_data <- training_data %>% mutate_if(is.character, as.numeric)
+training_data <- training_data[,colSums(is.na(training_data)) == 0]
+
+testing_data <- original_testing[,-c(1:7)]
+testing_data <- testing_data %>% mutate_if(is.logical, as.numeric)
+testing_data <- testing_data[,colSums(is.na(testing_data)) == 0]
+```
+
+## Modeling
+### Set Training and Testing Data
+The first step of modeling is to split the training data into two sets. The first will be used to fit the model (70%) and the second will be used to test the models for best accuracy (30%). The "test" data provided by the assignment will only be used as a "validation" data set for the test.
+```{r splitData, echo=FALSE, error = FALSE, warning = FALSE}
+set.seed(123)
+inTrain <- createDataPartition(y=training_data$classe, p=0.7, list=FALSE)
+final_train <- training_data[inTrain,]
+final_test <- training_data[-inTrain,]
+```
+
+
+### Random Forest
+I fit a Random Forest model to the training data (method="rf"). When comparing the second data set against a prediction using this model, the results gave an accuracy of 99.34%. 
+```{r randomForest, echo=FALSE, error = FALSE, warning = FALSE, cache=TRUE}
+set.seed(123)
+controlRF <- trainControl(method = "cv", number=3, verboseIter = FALSE)
+RF_model <- train(classe ~ ., data = final_train, method = "rf", trControl = controlRF, verbose = FALSE)
+RF_pred <- predict(RF_model, newdata = final_test)
+conf_rf <- confusionMatrix(RF_pred, final_test$classe)
+conf_rf
+```
+
+### Linear Discriminant Analysis
+I fit a LDA model to the training data (method="lda"). When comparing the second data set against a prediction using this model, the results gave an accuracy of 69.6%.
+```{r linearDiscriminantAnalysis, echo=FALSE, error = FALSE, warning = FALSE, cache=TRUE}
+set.seed(123)
+LDA_model <- train(classe ~ ., data = final_train, method = "lda")
+LDA_pred <- predict(LDA_model, newdata = final_test)
+conf_lda <- confusionMatrix(LDA_pred, final_test$classe)
+conf_lda
+```
+
+### Generalized Boosted Regression
+I fit a GBM model to the training data (method="gbm"). When comparing the second data set against a prediction using this model, the results gave an accuracy of 96.21%.
+```{r generalizedBoostedRegression, echo=FALSE, error = FALSE, warning = FALSE, cache=TRUE}
+set.seed(123)
+controlGBM <- trainControl(method="repeatedcv", number = 5, repeats = 1)
+GBM_model <- train(classe ~ ., data = final_train, method = "gbm", trControl = controlGBM, verbose = FALSE)
+GBM_pred <- predict(GBM_model, newdata = final_test)
+conf_gbm <- confusionMatrix(GBM_pred, final_test$classe)
+conf_gbm
+```
+### Model Decision and "Test" Output
+Based on the accuracy of each model, the Random Forest has the highest accuracy at 99.34% and an out-of-sample error rate of 0.66% so I will use that against the test data.
+```{r predictTestData, echo=FALSE, error = FALSE, warning = FALSE}
+testOutput <- predict(RF_model, newdata = testing_data)
+testOutput
+```
+
+
+
+
+## Appendix
+### Correlation Plot
+```{r correlation, echo=FALSE, error = FALSE, warning = FALSE}
+x <- cor(training_data[,-53])
+corrplot(x, type = "upper", method = "square", order = "hclust", tl.col = "black")
+colnames(training_data)[findCorrelation(x, cutoff=0.8)]
+```
+### Training Data
+```{r trainingData, echo=FALSE, error = FALSE, warning = FALSE}
+str(original_training)
+```
